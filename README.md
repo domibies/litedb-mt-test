@@ -4,6 +4,11 @@
 
 Accompanies LiteDB [issue 1573](https://github.com/mbdavid/LiteDB/issues/1537)
 
+Edit 13/03/2020 :
+- Seems to be stable now with 5.0.4. Added a thread specifically for calling 'Checkpoint()'.
+- Stuff below not true anymore, leaving this for reference
+
+
 Try to play a little bit with the parameters. Increase **DeleteEveryXSeconds** e.g. to 10, and you get different behaviour on Windows (locking instead of null reference exception), and a longer running test on MacOS.
 
 Behaviour seems to be either a null reference exception

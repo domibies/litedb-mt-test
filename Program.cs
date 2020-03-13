@@ -9,15 +9,16 @@ namespace LiteDb.MT.Test
 {
     class Program
     {
-        const int InitalNumInsertThreads = 16;
+        const int InitalNumInsertThreads = 64;
         static readonly List<Thread> Workers = new List<Thread>();
 
         const string DbFileName = ".\\MyFile.Db";
         static readonly ConcurrentDictionary<int, DateTime> WorkerTimestamps = new ConcurrentDictionary<int, DateTime>(); // keep timestamp per thread (after each insert)
         static readonly TimeSpan WaitBeforeAlert = new TimeSpan(0, 0, 5); // how long before a thread is considered 'stale'
         const int ReportEveryXSeconds = 1;
-        const int DeleteEveryXSeconds = 3;
-        const int KeepRecordsXSeconds = 5;
+        const int DeleteEveryXSeconds = 1;
+        const int DoCheckpointEveryXSeconds = 1;
+        const int KeepRecordsXSeconds = 10;
         static LiteDatabase Db;
         const string CollectionName = "Data";
 
@@ -40,7 +41,10 @@ namespace LiteDb.MT.Test
                 CountInserted += numInserted;
             }
         }
-
+        static int WaitSecondsToMs(int seconds)
+        {
+            return (seconds * 1000 + new Random().Next(-20, 20));
+        }
 
         public class SomeObject
         {
@@ -49,6 +53,7 @@ namespace LiteDb.MT.Test
 
         static void Main(/*string[] args*/)
         {
+            using var cancelSource = new CancellationTokenSource();
             try
             {
                 var searchPattern = Path.GetFileNameWithoutExtension(DbFileName);
@@ -61,7 +66,6 @@ namespace LiteDb.MT.Test
 
                 Db = new LiteDatabase(DbFileName);
 
-                using var cancelSource = new CancellationTokenSource();
                 // create & start the 'inserter'  threads
                 for (int i = 0; i < InitalNumInsertThreads; ++i)
                 {
@@ -76,6 +80,10 @@ namespace LiteDb.MT.Test
                 deleteThread.Start();
                 Workers.Add(deleteThread);
 
+                var doCheckpointThread = new Thread(() => DoCheckpoint(cancelSource.Token));
+                doCheckpointThread.Start();
+                Workers.Add(doCheckpointThread);
+
                 while (true)
                 {
                     var key = Console.ReadKey(true).Key;
@@ -86,19 +94,20 @@ namespace LiteDb.MT.Test
                     if (key == ConsoleKey.Enter)
                         break;
                 }
-
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+                throw;
+            }
+            finally
+            {
                 // stop it all
                 cancelSource.Cancel();
                 foreach (var worker in Workers)
                 {
                     worker.Join();
                 }
-
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine(ex.Message);
-                throw;
             }
         }
 
@@ -131,7 +140,7 @@ namespace LiteDb.MT.Test
 
                 WorkerTimestamps[Thread.CurrentThread.ManagedThreadId] = DateTime.Now;
 
-                Thread.Sleep(new Random().Next(1, 5)); // cpu friendly
+                Thread.Sleep(new Random().Next(1, 10)); // cpu friendly
             }
         }
 
@@ -140,7 +149,7 @@ namespace LiteDb.MT.Test
             while (true)
             {
                 // only once every x time
-                var cancelled = cancelToken.WaitHandle.WaitOne(1000 * ReportEveryXSeconds);
+                var cancelled = cancelToken.WaitHandle.WaitOne(WaitSecondsToMs(ReportEveryXSeconds));
                 if (cancelled)
                 {
                     Console.WriteLine($"Report thread ({Thread.CurrentThread.ManagedThreadId}) canceled");
@@ -148,7 +157,7 @@ namespace LiteDb.MT.Test
                 }
 
                 Console.Clear();
-                Console.WriteLine($"LiteDb Multithreaded insert & delete hammering ({Workers.Count - 2} insert threads), running for {(DateTime.Now - StartTime)}");
+                Console.WriteLine($"LiteDb Multithreaded insert & delete test ({Workers.Count - 3} insert threads), running for {(DateTime.Now - StartTime)}");
                 Console.WriteLine($"{CountInserted} Records inserted so far.");
                 Console.WriteLine($"{CountDeleted} Records deleted so far.");
                 Console.WriteLine("Press <ENTER> to stop processing, <SPACE> to add a thread");
@@ -179,14 +188,12 @@ namespace LiteDb.MT.Test
             while (true)
             {
                 // only once every X second
-                var cancelled = cancelToken.WaitHandle.WaitOne(1000 * DeleteEveryXSeconds);
+                var cancelled = cancelToken.WaitHandle.WaitOne(WaitSecondsToMs(DeleteEveryXSeconds));
                 if (cancelled)
                 {
                     Console.WriteLine($"Delete thread ({Thread.CurrentThread.ManagedThreadId}) canceled");
                     break;
                 }
-
-                //Db.Checkpoint();
 
                 // do it (delete)
                 var collection = Db.GetCollection<SomeObject>(CollectionName);
@@ -195,6 +202,22 @@ namespace LiteDb.MT.Test
 
                 if (countDeleted > 0)
                     AddDeleted(countDeleted);
+            }
+        }
+
+        private static void DoCheckpoint(CancellationToken cancelToken)
+        {
+            while (true)
+            {
+                // only once every X second
+                var cancelled = cancelToken.WaitHandle.WaitOne(WaitSecondsToMs(DoCheckpointEveryXSeconds));
+                if (cancelled)
+                {
+                    Console.WriteLine($"DoCheckpoint thread ({Thread.CurrentThread.ManagedThreadId}) canceled");
+                    break;
+                }
+
+                Db.Checkpoint();
             }
         }
     }
