@@ -6,6 +6,9 @@
     <RootNamespace>LiteDb.MT.Test</RootNamespace>
   </PropertyGroup>
 
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <DebugType></DebugType>
+  </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="LiteDB" Version="5.0.4" />
   </ItemGroup>

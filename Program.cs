@@ -1,4 +1,4 @@
-﻿using LiteDB;
+using LiteDB;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -9,10 +9,10 @@ namespace LiteDb.MT.Test
 {
     class Program
     {
-        const int InitalNumInsertThreads = 64;
+        const int InitalNumInsertThreads = 32;
         static readonly List<Thread> Workers = new List<Thread>();
 
-        const string DbFileName = ".\\MyFile.Db";
+        const string DbFileName = "./MyFile.Db";
         static readonly ConcurrentDictionary<int, DateTime> WorkerTimestamps = new ConcurrentDictionary<int, DateTime>(); // keep timestamp per thread (after each insert)
         static readonly TimeSpan WaitBeforeAlert = new TimeSpan(0, 0, 5); // how long before a thread is considered 'stale'
         const int ReportEveryXSeconds = 1;
@@ -56,13 +56,7 @@ namespace LiteDb.MT.Test
             using var cancelSource = new CancellationTokenSource();
             try
             {
-                var searchPattern = Path.GetFileNameWithoutExtension(DbFileName);
-                var filesToDelete = Directory.GetFiles(".", $"{searchPattern}*.Db");
-                foreach (var deleteFile in filesToDelete)
-                {
-                    Console.WriteLine($"Deleting {deleteFile}");
-                    File.Delete(deleteFile);
-                }
+                DeleteDbFiles();
 
                 Db = new LiteDatabase(DbFileName);
 
@@ -108,6 +102,18 @@ namespace LiteDb.MT.Test
                 {
                     worker.Join();
                 }
+                DeleteDbFiles();
+            }
+        }
+
+        private static void DeleteDbFiles()
+        {
+            var searchPattern = Path.GetFileNameWithoutExtension(DbFileName);
+            var filesToDelete = Directory.GetFiles(".", $"{searchPattern}*.Db");
+            foreach (var deleteFile in filesToDelete)
+            {
+                Console.WriteLine($"Deleting {new FileInfo(deleteFile).FullName}");
+                File.Delete(deleteFile);
             }
         }
 
@@ -140,7 +146,7 @@ namespace LiteDb.MT.Test
 
                 WorkerTimestamps[Thread.CurrentThread.ManagedThreadId] = DateTime.Now;
 
-                Thread.Sleep(new Random().Next(1, 10)); // cpu friendly
+                Thread.Sleep(new Random().Next(1, 16)); // cpu friendly
             }
         }
 
